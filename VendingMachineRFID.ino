@@ -12,11 +12,15 @@
 #include "VendingMachineRFID.h"
 
 /* Hack to fix sizeof(card_uid_t) sometimes becoming 5 (?) */
-#define CARD_UID_SIZE 4
+// #define CARD_UID_SIZE 4
+// Caused by Stream.parseInt();
 
 MFRC522 mfrc522(SS_PIN, RST_PIN); // Create MFRC522 instance.
 uint32_t lastCardScan; // Debounce RFID reads
 uint32_t timeBetweenScans;
+
+uint16_t credits_in_machine;//Serial.parseInt();
+char parseBuffer[2];
 
 void setup() {
   uint32_t lastCardScan = 0;
@@ -28,7 +32,7 @@ void setup() {
   Serial.print("Sizeof(card): ");
   Serial.println(sizeof(card_t));
   Serial.print("Sizeof(card_uid_t):: ");
-  Serial.println(CARD_UID_SIZE);
+  Serial.println(sizeof(card_uid_t));
   Serial.print("Sizeof(card_credits_t): ");
   Serial.println(sizeof(card_credits_t));
 }
@@ -44,18 +48,24 @@ void loop() {
     if(millis()-lastCardScan > timeBetweenScans){
       lastCardScan = millis();
       cardSwiped();
-
       // Init card
       card_t card;
       // Copy card uid
-      memcpy(&card.uid, &mfrc522.uid.uidByte, CARD_UID_SIZE);
+      memcpy(&card.uid, &mfrc522.uid.uidByte, sizeof(card_uid_t));
       uint16_t addr = findCardOffset(card);
+      uint16_t credit_addr = addr+4;
 
+      // Flush incoming buffer
+      while(Serial.available()){Serial.read();}
       // Fetch current credit count for the vending machine, in order to know whether to withdraw or deposit
       Serial.print("C");
       Serial.println(addr);
-      // Recieve response
-      uint16_t credits_in_machine = Serial.parseInt();
+      // Attempt to recieve response from vending machine
+      // If no response from has been recieved within a second, assume it is not powered/booted yet, stop processing
+      if(Serial.readBytes(parseBuffer, sizeof(parseBuffer)) != 2){Serial.print("No response - aborting.");return;}
+      Serial.println(parseBuffer[0],DEC);
+      Serial.println(parseBuffer[1],DEC);
+      memcpy(&credits_in_machine,parseBuffer,sizeof(parseBuffer));
       // Zero credits in machine - done now to avoid race-conditions of people buying when saving credits
       Serial.print("Z");
       Serial.println(credits_in_machine);
@@ -72,8 +82,7 @@ void loop() {
         } else { // Known card!
           // Card found!
           // Withdraw from card
-          uint16_t credit_addr = addr+CARD_UID_SIZE;
-          EEPROM_readAnything(credit_addr,card.credits);
+          EEPROM_readAnything(addr+sizeof(card_uid_t),card.credits);
           if(card.credits == 0){
             // ERR Beep + display "NO CREDITS"?
             Serial.println("NO CREDITS - KNOWN CARD");
@@ -127,19 +136,7 @@ void loop() {
           card.credits = 0;
         } else { // Known card
           // Fetch current credits
-          uint16_t four = 4;
-          uint16_t credit_addr = addr+4;
-          //Serial.print("Z ");
-          Serial.println(addr,DEC);
-          Serial.println(addr+4,DEC);
-          Serial.println(addr+four,DEC);
-          //Serial.print(" + ");
-          //Serial.print(CARD_UID_SIZE);
-          //Serial.print(" = ");
-          Serial.println(credit_addr);
-          credit_addr = addr+four;
-          Serial.println(credit_addr);
-          EEPROM_readAnything(credit_addr,card.credits);
+          EEPROM_readAnything(addr+sizeof(card_uid_t),card.credits);
         }
         card.credits += credits_in_machine;
         // Card found! (Known card OR found free spot for new card)
@@ -207,12 +204,12 @@ int16_t findCardOffset(const card_t c){
 
 int16_t findFreeCardSpot(){
   uint16_t credits = 0;
-  uint16_t addr = CARD_UID_SIZE; // Offset pointer, so we are looking at the card.credits
+  uint16_t addr = sizeof(card_uid_t); // Offset pointer, so we are looking at the card.credits
   uint16_t last_addr = 1024-sizeof(card_t); // EEPROM size minus size of one element
   for(addr; addr <= last_addr; addr = addr + sizeof(card_t)){
     if(EEPROM_compareAnything(addr,credits)){ // If bytes at address match, ok!
-      Serial.println(addr-CARD_UID_SIZE);
-      return addr-CARD_UID_SIZE; // Offset pointer again, so it points to beginning of card_t
+      Serial.println(addr-sizeof(card_uid_t));
+      return addr-sizeof(card_uid_t); // Offset pointer again, so it points to beginning of card_t
     }
   }
   return 65535; // Error value
