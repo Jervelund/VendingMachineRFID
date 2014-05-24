@@ -48,7 +48,6 @@ template <class T> uint16_t EEPROM_updateAnything(uint16_t addr, const T& value)
 }
 
 template <class T> uint16_t EEPROM_readAnything(uint16_t addr, T& value) {
-  Serial.println(addr);
   eeprom_busy_wait(); // Wait until the EEPROM is ready
   uint8_t *p = (uint8_t*)(void*)&value;
   uint16_t i;
