@@ -51,12 +51,8 @@ template <class T> uint16_t EEPROM_readAnything(uint16_t addr, T& value) {
   eeprom_busy_wait(); // Wait until the EEPROM is ready
   uint8_t *p = (uint8_t*)(void*)&value;
   uint16_t i;
-  for (i = 0; i < sizeof(value); i++){
+  for (i = 0; i < sizeof(value); i++)
     *p++ = eeprom_read_byte((uint8_t*)addr++);
-    Serial.print(addr-1);
-    Serial.print(" contains :");
-    Serial.println(*(p-1));
-  }
   return i;
 }
 
@@ -65,10 +61,9 @@ template <class T> uint16_t EEPROM_compareAnything(uint16_t addr, const T& value
   eeprom_busy_wait(); // Wait until the EEPROM is ready
   const uint8_t *p = (const uint8_t*)(const void*)&value;
   uint16_t i;
-  for (i = 0; i < sizeof(value); i++) {
+  for (i = 0; i < sizeof(value); i++) 
     if (eeprom_read_byte((uint8_t*)addr++) != *p++) // Compares current byte
       return false; // At least one byte does not match
-  }
   return true; // All bytes match
 }
 
