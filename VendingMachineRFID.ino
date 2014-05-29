@@ -6,14 +6,12 @@
 #define SS_PIN 10
 #define RST_PIN A0
 
+#define transmission_attempts 10
+
 #include <SPI.h>
 #include <MFRC522.h> // MFRC522 library by Miguel Balboa (circuitito.com, Jan, 2012) & Søren Thing Andersen (access.thing.dk, fall of 2013)
 #include "EEPROMAnything.h"
 #include "VendingMachineRFID.h"
-
-/* Hack to fix sizeof(card_uid_t) sometimes becoming 5 (?) */
-// #define CARD_UID_SIZE 4
-// Caused by Stream.parseInt();
 
 MFRC522 mfrc522(SS_PIN, RST_PIN); // Create MFRC522 instance.
 uint32_t lastCardScan; // Debounce RFID reads
@@ -32,7 +30,7 @@ void setup() {
 uint8_t recieve_error;
 uint16_t rfid_recieve(){
   char parseBuffer[10];
-  uint8_t recieveAttemptsRemaining = 11;
+  uint8_t recieveAttemptsRemaining = transmission_attempts;
   uint16_t number = 0;
   while(recieveAttemptsRemaining-- > 0){
     if(Serial.readBytes(parseBuffer, sizeof(parseBuffer)) == sizeof(parseBuffer)){
@@ -51,7 +49,6 @@ uint16_t rfid_recieve(){
       Serial.write(recieveAttemptsRemaining+48);
   }
   recieve_error = 1; // timed out
-//number = 0;
   // Let other party know we do not need a retransmission
   Serial.write(0);
   return number;
@@ -63,7 +60,7 @@ char rfid_transmit(uint16_t number){
   uint8_t first_half   = number >> 8;   // >>>> >>>> 0001 0110
   uint8_t sencond_half = number & mask; // ____ ____ 0100 0111
   char waiting_for_ok = 1;
-  uint8_t transmitAttemptsRemaining = 10;
+  uint8_t transmitAttemptsRemaining = transmission_attempts;
   while(waiting_for_ok && transmitAttemptsRemaining-- > 0){
     // Flush incoming buffer
     while(Serial.available()){Serial.read();}
@@ -71,7 +68,8 @@ char rfid_transmit(uint16_t number){
       Serial.write(sencond_half);
       Serial.write(first_half);
     }
-    Serial.readBytes(&waiting_for_ok,1);
+    if(Serial.readBytes(&waiting_for_ok,1) == 0) // No bytes recieved
+      waiting_for_ok = 1; // Overwrite waiting_for_ok - necessary?
   }
   return waiting_for_ok;
 }
@@ -192,7 +190,7 @@ void loop() {
         // Card found! (Known card OR found free spot for new card)
         // Attempt to add credits to card
         if(updateAndVerify(addr,card)){
-          Serial.print("C");
+          //Serial.print("C");
           // OK Beep
         } else{
           // Reset credits on vending machine
@@ -249,3 +247,4 @@ int16_t findFreeCardSpot(){
   }
   return 65535; // Error value
 }
+
