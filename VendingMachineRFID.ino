@@ -18,23 +18,69 @@
 MFRC522 mfrc522(SS_PIN, RST_PIN); // Create MFRC522 instance.
 uint32_t lastCardScan; // Debounce RFID reads
 uint32_t timeBetweenScans;
-
 uint16_t credits_in_machine;//Serial.parseInt();
-char parseBuffer[2];
 
 void setup() {
   lastCardScan = 0;
-  timeBetweenScans = 1500; // TODO: Set to 1500 when in production
-  Serial.begin(9600); // Initialize serial communications with master vending arduino
+  timeBetweenScans = 800; // TODO: Set to 1500 when in production
+  Serial.begin(19200); // Initialize serial communications with master vending arduino
+  Serial.setTimeout(400);
   SPI.begin(); // Init SPI bus
   mfrc522.PCD_Init(); // Init MFRC522 card
 }
 
+uint8_t recieve_error;
+uint16_t rfid_recieve(){
+  char parseBuffer[10];
+  uint8_t recieveAttemptsRemaining = 11;
+  uint16_t number = 0;
+  while(recieveAttemptsRemaining-- > 0){
+    if(Serial.readBytes(parseBuffer, sizeof(parseBuffer)) == sizeof(parseBuffer)){
+      // Recieved correct ammount of bytes - check message integrity
+      if(memcmp(parseBuffer,parseBuffer+2,sizeof(parseBuffer)-2) == 0){
+        // OK
+        recieve_error = 0;
+        // Let other party know we do not need a retransmission
+        Serial.write(0);
+        memcpy(&number,parseBuffer,sizeof(number));
+        return number;
+      }
+    }
+    // Recieved incorrect ammount of bytes - Retry only if we are going to run function again
+    if(recieveAttemptsRemaining > 0)
+      Serial.write(recieveAttemptsRemaining+48);
+  }
+  recieve_error = 1; // timed out
+//number = 0;
+  // Let other party know we do not need a retransmission
+  Serial.write(0);
+  return number;
+}
+
+char rfid_transmit(uint16_t number){
+//uint16_t number;                      // 0001 0110 0100 0111
+  uint16_t mask   = B11111111;          // 0000 0000 1111 1111
+  uint8_t first_half   = number >> 8;   // >>>> >>>> 0001 0110
+  uint8_t sencond_half = number & mask; // ____ ____ 0100 0111
+  char waiting_for_ok = 1;
+  uint8_t transmitAttemptsRemaining = 10;
+  while(waiting_for_ok && transmitAttemptsRemaining-- > 0){
+    // Flush incoming buffer
+    while(Serial.available()){Serial.read();}
+    for (int i = 0; i < 10; i = i+2) {
+      Serial.write(sencond_half);
+      Serial.write(first_half);
+    }
+    Serial.readBytes(&waiting_for_ok,1);
+  }
+  return waiting_for_ok;
+}
+
 void loop() {
   // Look for new cards
-  if(!mfrc522.PICC_IsNewCardPresent()) {return;}
+  if(!mfrc522.PICC_IsNewCardPresent()) return;
   // Select one of the cards
-  if(!mfrc522.PICC_ReadCardSerial()) {return;}
+  if(!mfrc522.PICC_ReadCardSerial()) return;
   // Now a card is selected. The UID and SAK is in mfrc522.uid.
 
   // Dump UID
@@ -52,25 +98,28 @@ void loop() {
       while(Serial.available()){Serial.read();}
       // Fetch current credit count for the vending machine, in order to know whether to withdraw or deposit
       Serial.print("C");
+      credits_in_machine = rfid_recieve();
       //Serial.println(addr);
       // Attempt to recieve response from vending machine
       // If no response from has been recieved within a second, assume it is not powered/booted yet, stop processing
+      if(recieve_error == 1) return;
+      /*
       if(Serial.readBytes(parseBuffer, sizeof(parseBuffer)) != 2){
         //Serial.print("No response - aborting.");
         return;
       }
       //Serial.println(parseBuffer[0],DEC);
       //Serial.println(parseBuffer[1],DEC);
-      memcpy(&credits_in_machine,parseBuffer,sizeof(parseBuffer));
+      memcpy(&credits_in_machine,parseBuffer,sizeof(parseBuffer));*/
       // Zero credits in machine - done now to avoid race-conditions of people buying when saving credits
-      Serial.print("Z");
+      Serial.print("ZZZZZ"); // Zero five times
       //Serial.println(credits_in_machine);
 
       if(credits_in_machine == 0){ // Attempt withdrawal               ## WITHDRAW
         if(addr == 65535){ // New card!
           // ERR Beep + display "NO CREDITS"?
           //Serial.println("NO CREDITS - UNKNOWN CARD");
-          Serial.println("N");
+          Serial.print("N");
           // Halt PICC
           mfrc522.PICC_HaltA();
           // Return
@@ -82,7 +131,7 @@ void loop() {
           if(card.credits == 0){
             // ERR Beep + display "NO CREDITS"?
             //Serial.println("NO CREDITS - KNOWN CARD");
-            Serial.println("N");
+            Serial.print("N");
             // Halt PICC
             mfrc522.PICC_HaltA();
             // Return
@@ -95,16 +144,16 @@ void loop() {
             // Check if card has been changed
             // OK Beep + Set credits on vending machine
             Serial.print("S");
-            uint16_t number = current_credits;            // 0001 0110 0100 0111
-            uint16_t mask   = B11111111;          // 0000 0000 1111 1111
-            uint8_t first_half   = number >> 8;   // >>>> >>>> 0001 0110
-            uint8_t sencond_half = number & mask; // ____ ____ 0100 0111
-            Serial.write(sencond_half);
-            Serial.write(first_half);
+            char error = rfid_transmit(current_credits);
+            if(error != 0){
+              // Could not update machine credits - attempt to save credits to card again!
+              card.credits = current_credits;
+              updateAndVerify(addr,card);
+            }
           } else {
             // ERR Beep + display "ERR  EEPROM BAD" ?
             //Serial.println("ERR  EEPROM BAD");
-            Serial.println("B");
+            Serial.print("B");
             // Halt PICC
             mfrc522.PICC_HaltA();
             // Return
@@ -122,15 +171,10 @@ void loop() {
           if(addr == 65535){
             // Reset credits on vending machine
             Serial.print("S");
-            uint16_t number = credits_in_machine;            // 0001 0110 0100 0111
-            uint16_t mask   = B11111111;          // 0000 0000 1111 1111
-            uint8_t first_half   = number >> 8;   // >>>> >>>> 0001 0110
-            uint8_t sencond_half = number & mask; // ____ ____ 0100 0111
-            Serial.write(sencond_half);
-            Serial.write(first_half);
+            rfid_transmit(credits_in_machine);
             // ERR Beep + display "ERR  OUT OF MEMORY" ?
             //Serial.println("ERR  OUT OF MEMORY");
-            Serial.println("O");
+            Serial.print("O");
             // Halt PICC
             mfrc522.PICC_HaltA();
             // Return
@@ -148,17 +192,12 @@ void loop() {
         // Card found! (Known card OR found free spot for new card)
         // Attempt to add credits to card
         if(updateAndVerify(addr,card)){
+          Serial.print("C");
           // OK Beep
         } else{
           // Reset credits on vending machine
           Serial.print("S");
-          uint16_t number = credits_in_machine;            // 0001 0110 0100 0111
-          uint16_t mask   = B11111111;          // 0000 0000 1111 1111
-          uint8_t first_half   = number >> 8;   // >>>> >>>> 0001 0110
-          uint8_t sencond_half = number & mask; // ____ ____ 0100 0111
-          Serial.write(sencond_half);
-          Serial.write(first_half);
-          
+          rfid_transmit(credits_in_machine);
           // ERR Beep + display "ERR  EEPROM BAD" ?
           //Serial.println("ERR  EEPROM BAD");
           Serial.print("B");
@@ -177,7 +216,7 @@ bool updateAndVerify(uint16_t addr, card_t card){
   EEPROM_updateAnything(addr,card);
   if(EEPROM_compareAnything(addr,card)){
     //Serial.print("Update OK - new credits:");
-    Serial.println(card.credits);
+    //Serial.println(card.credits);
     return true;
   }
   //Serial.print("Update verify error at address: ");
