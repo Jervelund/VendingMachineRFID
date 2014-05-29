@@ -6,8 +6,6 @@
 #define SS_PIN 10
 #define RST_PIN A0
 
-#define transmission_attempts 10
-
 #include <SPI.h>
 #include <MFRC522.h> // MFRC522 library by Miguel Balboa (circuitito.com, Jan, 2012) & Søren Thing Andersen (access.thing.dk, fall of 2013)
 #include "EEPROMAnything.h"
@@ -27,9 +25,11 @@ void setup() {
   mfrc522.PCD_Init(); // Init MFRC522 card
 }
 
+#define transmission_attempts 10
+#define transmission_repeats 5
 uint8_t recieve_error;
 uint16_t rfid_recieve(){
-  char parseBuffer[10];
+  char parseBuffer[transmission_repeats*2];
   uint8_t recieveAttemptsRemaining = transmission_attempts;
   uint16_t number = 0;
   while(recieveAttemptsRemaining-- > 0){
@@ -64,7 +64,7 @@ char rfid_transmit(uint16_t number){
   while(waiting_for_ok && transmitAttemptsRemaining-- > 0){
     // Flush incoming buffer
     while(Serial.available()){Serial.read();}
-    for (int i = 0; i < 10; i = i+2) {
+    for (int i = 0; i < transmission_repeats*2; i = i+2) {
       Serial.write(sencond_half);
       Serial.write(first_half);
     }
