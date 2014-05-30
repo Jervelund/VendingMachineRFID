@@ -11,32 +11,58 @@
 #include "EEPROMAnything.h"
 #include "VendingMachineRFID.h"
 
-MFRC522 mfrc522(SS_PIN, RST_PIN); // Create MFRC522 instance.
-uint32_t lastCardScan; // Debounce RFID reads
-uint32_t timeBetweenScans;
-uint16_t credits_in_machine;//Serial.parseInt();
+#define EEPROM_SIZE 1024
 
-void setup() {
-  lastCardScan = 0;
-  timeBetweenScans = 200;
-  Serial.begin(19200); // Initialize serial communications with master vending arduino
-  Serial.setTimeout(200);
-  SPI.begin(); // Init SPI bus
-  mfrc522.PCD_Init(); // Init MFRC522 card
-  pinMode(9, OUTPUT); // speaker out
-}
+//#include <SoftwareSerial.h>
+//SoftwareSerial Serial2(2, 3); // RX, TX
 
 #define TRANSMISSION_ATTEMPTS 10
 #define TRANSMISSION_REPEATS 5
 #define TRANSMISSION_SPACE 95
 #define TRANSMISSION_ATOM_SIZE 3
+
 uint8_t recieve_error;
+
+MFRC522 mfrc522(SS_PIN, RST_PIN); // Create MFRC522 instance.
+uint32_t lastCardScan; // Debounce RFID reads
+const uint8_t timeBetweenScans = 200;
+uint16_t credits_in_machine;//Serial.parseInt();
+
+const uint8_t speakerOutPin = 9;
+
+void setup() {
+  //Serial2.begin(19200);
+
+#if 0 // Set this to 1 to set the entire EEPROM to 0 (default is 0xFF)
+  for (uint16_t i = 0; i < EEPROM_SIZE; i++)
+    EEPROM_writeAnything(i, 0);
+  Serial2.println(F("EEPROM cleared"));
+  while(1);
+#endif
+
+  //Serial2.println(F("Started"));
+  
+  lastCardScan = 0;
+  
+  Serial.begin(19200); // Initialize serial communications with master vending arduino
+  Serial.setTimeout(200);
+
+  SPI.begin(); // Init SPI bus
+  mfrc522.PCD_Init(); // Init MFRC522 card
+  pinMode(speakerOutPin, OUTPUT); // speaker out
+}
 
 uint16_t rfid_raw_read(){
   char parseBuffer[TRANSMISSION_REPEATS*TRANSMISSION_ATOM_SIZE];
   uint16_t number = 0;
   recieve_error = 1; // set default to error
   if(Serial.readBytes(parseBuffer, sizeof(parseBuffer)) == sizeof(parseBuffer)){
+    /*for (uint8_t i = 0; i < sizeof(parseBuffer); i++) {
+      Serial2.print(parseBuffer[i], HEX);
+      Serial2.write(' ');
+    }
+    Serial2.println();*/
+
     // Recieved correct ammount of bytes - check message integrity
     if(memcmp(parseBuffer,parseBuffer+TRANSMISSION_ATOM_SIZE,sizeof(parseBuffer)-TRANSMISSION_ATOM_SIZE) == 0){
       if(parseBuffer[2] == TRANSMISSION_SPACE){
@@ -71,13 +97,9 @@ uint16_t rfid_recieve(unsigned char command){
 }
 
 char rfid_raw_transmit(uint16_t number){
-  //uint16_t number;                    // 0001 0110 0100 0111
-  uint16_t mask   = B11111111;          // 0000 0000 1111 1111
-  uint8_t first_half   = number >> 8;   // >>>> >>>> 0001 0110
-  uint8_t sencond_half = number & mask; // ____ ____ 0100 0111
   for (int i = 0; i < TRANSMISSION_REPEATS*TRANSMISSION_ATOM_SIZE; i = i+TRANSMISSION_ATOM_SIZE) {
-    Serial.write(sencond_half);
-    Serial.write(first_half);
+    Serial.write(number & 0xFF);
+    Serial.write(number >> 8);
     Serial.write(TRANSMISSION_SPACE);
   }
 }
@@ -106,7 +128,7 @@ void loop() {
   // Now a card is selected. The UID and SAK is in mfrc522.uid.
 
   // Dump UID
-    if((millis()-lastCardScan) > timeBetweenScans){
+    if(millis() - lastCardScan > timeBetweenScans){
       lastCardScan = millis();
       // Some user feedback
       BEEP(1);
@@ -115,9 +137,9 @@ void loop() {
       // Copy card uid
       memcpy(&card.uid, &mfrc522.uid.uidByte, sizeof(card_uid_t));
       uint16_t addr = findCardOffset(card);
-      uint16_t credit_addr = addr+4;
+      uint16_t credit_addr = addr + sizeof(card_uid_t);
       // Flush incoming buffer
-      while(Serial.available()){Serial.read();}
+      //while(Serial.available()){Serial.read();}
       // Fetch current credit count for the vending machine, in order to know whether to withdraw or deposit
       credits_in_machine = rfid_recieve('C');
       //Serial.println(addr);
@@ -126,10 +148,10 @@ void loop() {
       if(recieve_error == 1){BEEP(4);return;}
 
       if(credits_in_machine == 0){ // Attempt withdrawal               ## WITHDRAW
-        if(addr == 65535){ // New card!
+        if(addr == 0xFFFF){ // New card!
           // ERR Beep + display "NO CREDITS"?
           //Serial.println("NO CREDITS - UNKNOWN CARD");
-          Serial.print("N");
+          Serial.write('N');
           BEEP(1);
           // Halt PICC
           mfrc522.PICC_HaltA();
@@ -142,7 +164,7 @@ void loop() {
           if(card.credits == 0){
             // ERR Beep + display "NO CREDITS"?
             //Serial.println("NO CREDITS - KNOWN CARD");
-            Serial.print("N");
+            Serial.write('N');
             BEEP(1);
             // Halt PICC
             mfrc522.PICC_HaltA();
@@ -165,7 +187,7 @@ void loop() {
           } else {
             // ERR Beep + display "ERR  EEPROM BAD" ?
             //Serial.println("ERR  EEPROM BAD");
-            Serial.print("B");
+            Serial.write('B');
             BEEP(4);
             // Halt PICC
             mfrc522.PICC_HaltA();
@@ -178,17 +200,17 @@ void loop() {
         }
       } else { // Attempt deposit                                      ## DEPOSIT
         // Zero credits in machine - done now to avoid race-conditions of people buying when saving credits
-        Serial.print("ZZZZZ"); // Make sure the machine is zeroed five times
-        if(addr == 65535){ // New card!
+        Serial.write("ZZZZZ"); // Make sure the machine is zeroed five times
+        if(addr == 0xFFFF){ // New card!
           // Attempt to find free spot
           //Serial.println("Unknown card - search for free spot");
           addr = findFreeCardSpot();
-          if(addr == 65535){
+          if(addr == 0xFFFF){
             // Reset credits on vending machine
             rfid_transmit('S',credits_in_machine);
             // ERR Beep + display "ERR  OUT OF MEMORY" ?
             //Serial.println("ERR  OUT OF MEMORY");
-            Serial.print("O");
+            Serial.write('O');
             BEEP(4);
             // Halt PICC
             mfrc522.PICC_HaltA();
@@ -214,7 +236,7 @@ void loop() {
           rfid_transmit('S',credits_in_machine);
           // ERR Beep + display "ERR  EEPROM BAD" ?
           //Serial.println("ERR  EEPROM BAD");
-          Serial.print("B");
+          Serial.write('B');
           BEEP(4);
           // TODO: Move card + mark sector as bad.
           // Attempt to move card?
@@ -238,50 +260,46 @@ bool updateAndVerify(uint16_t addr, card_t card){
   return false;
 }
 
-/* Returns address of card - returns 65535 if card is not found */
+/* Returns address of card - returns 0xFFFF if card is not found */
 int16_t findCardOffset(const card_t c){
   uint16_t addr;
-  uint16_t last_addr = 1024-sizeof(card_t); // EEPROM size minus element size
-  for(addr = 0; addr <= last_addr; addr = addr + sizeof(card_t)){
+  uint16_t last_addr = EEPROM_SIZE - sizeof(card_t); // EEPROM size minus element size
+  for(addr = 0; addr <= last_addr; addr += sizeof(card_t)){
     if(EEPROM_compareAnything(addr,c.uid)){ // If bytes at address match, ok!
       //Serial.println(addr);
       return addr;
     }
   }
-  return 65535; // Error value
+  return 0xFFFF; // Error value
 }
 
 int16_t findFreeCardSpot(){
-  uint16_t credits = 0;
+  card_credits_t credits = 0;
   uint16_t addr = sizeof(card_uid_t); // Offset pointer, so we are looking at the card.credits
-  uint16_t last_addr = 1024-sizeof(card_t); // EEPROM size minus size of one element
-  for(addr; addr <= last_addr; addr = addr + sizeof(card_t)){
-    if(EEPROM_compareAnything(addr,credits)){ // If bytes at address match, ok!
+  uint16_t last_addr = EEPROM_SIZE - sizeof(card_credits_t); // EEPROM size minus size of one element
+  for(addr; addr <= last_addr; addr += sizeof(card_t)){
+    if(EEPROM_compareAnything(addr, credits)){ // If bytes at address match, ok!
       //Serial.println(addr-sizeof(card_uid_t));
       return addr-sizeof(card_uid_t); // Offset pointer again, so it points to beginning of card_t
     }
   }
-  return 65535; // Error value
+  return 0xFFFF; // Error value
 }
-
-int speakerOut = 9;               
 
 int tone_ = 0;
 
 void BEEP(uint8_t n){
   unsigned char delayms = 100;
   beepp(delayms);
-  for(int i=1;i<n;i++){
+  for(uint8_t i=1;i<n;i++){
     delay(delayms);
     beepp(delayms);
   }
 }
 
 void beepp(unsigned char delayms){
-  analogWrite(9, 100);     // Almost any value can be used except 0 and 255
+  analogWrite(speakerOutPin, 100);     // Almost any value can be used except 0 and 255
                            // experiment to get the best tone
   delay(delayms);          // wait for a delayms ms
-  analogWrite(9, 0);       // 0 turns it off
+  analogWrite(speakerOutPin, 0);       // 0 turns it off
 }                         
-
-
