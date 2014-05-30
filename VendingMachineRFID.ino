@@ -28,7 +28,7 @@ uint32_t lastCardScan; // Debounce RFID reads
 const uint8_t timeBetweenScans = 200;
 uint16_t credits_in_machine;//Serial.parseInt();
 
-const uint8_t speakerOutPin = 9;
+const uint8_t speakerOutPin = A1;
 
 void setup() {
   //Serial2.begin(19200);
@@ -50,6 +50,7 @@ void setup() {
   SPI.begin(); // Init SPI bus
   mfrc522.PCD_Init(); // Init MFRC522 card
   pinMode(speakerOutPin, OUTPUT); // speaker out
+  BEEP(1);
 }
 
 uint16_t rfid_raw_read(){
@@ -298,8 +299,8 @@ void BEEP(uint8_t n){
 }
 
 void beepp(unsigned char delayms){
-  analogWrite(speakerOutPin, 100);     // Almost any value can be used except 0 and 255
+  digitalWrite(speakerOutPin, HIGH);     // Almost any value can be used except 0 and 255
                            // experiment to get the best tone
   delay(delayms);          // wait for a delayms ms
-  analogWrite(speakerOutPin, 0);       // 0 turns it off
+  digitalWrite(speakerOutPin, LOW);       // 0 turns it off
 }                         
