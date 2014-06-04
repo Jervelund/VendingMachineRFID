@@ -33,7 +33,8 @@ const uint8_t speakerOutPin = A1;
 void setup() {
   //Serial2.begin(19200);
 
-#if 0 // Set this to 1 to set the entire EEPROM to 0 (default is 0xFF)
+// Set this to 1 to set the entire EEPROM to 0 (default is 0xFF)
+#if 0
   for (uint16_t i = 0; i < EEPROM_SIZE; i++)
     EEPROM_writeAnything(i, 0);
   Serial2.println(F("EEPROM cleared"));
@@ -58,19 +59,13 @@ uint16_t rfid_raw_read(){
   uint16_t number = 0;
   recieve_error = 1; // set default to error
   if(Serial.readBytes(parseBuffer, sizeof(parseBuffer)) == sizeof(parseBuffer)){
-    /*for (uint8_t i = 0; i < sizeof(parseBuffer); i++) {
-      Serial2.print(parseBuffer[i], HEX);
-      Serial2.write(' ');
-    }
-    Serial2.println();*/
-
     // Recieved correct ammount of bytes - check message integrity
     if(memcmp(parseBuffer,parseBuffer+TRANSMISSION_ATOM_SIZE,sizeof(parseBuffer)-TRANSMISSION_ATOM_SIZE) == 0){
       if(parseBuffer[2] == TRANSMISSION_SPACE){
         // OK
         recieve_error = 0;
-        // Let other party know we do not need a retransmission
         memcpy(&number,parseBuffer,sizeof(number));
+        // Rember to notify other party that we do not need a retransmission
       }
     }
   }
@@ -86,6 +81,7 @@ uint16_t rfid_recieve(unsigned char command){
     while(Serial.available()){Serial.read();delay(5);}
     // Request and read data from other party
     Serial.write(command);
+    while(Serial.read() != 'C'){}; // Wait till other side transmits a C (is this the best solution?)
     number = rfid_raw_read();
     if(recieve_error == 0){ // Recieved correctly, return value
       return number;
@@ -107,6 +103,7 @@ char rfid_raw_transmit(uint16_t number){
 
 char rfid_transmit(unsigned char command, uint16_t number){
   char waiting_for_ok = 1;
+  char ack_buffer[3];
   uint8_t transmitAttemptsRemaining = TRANSMISSION_ATTEMPTS;
   while(waiting_for_ok && transmitAttemptsRemaining-- > 0){
     // Flush incoming buffer
@@ -114,11 +111,13 @@ char rfid_transmit(unsigned char command, uint16_t number){
     // Transmit data
     Serial.write(command);
     rfid_raw_transmit(number);
-    Serial.readBytes(&waiting_for_ok,1);
-    //if(Serial.readBytes(&waiting_for_ok,1) == 0) // No bytes recieved
-      //waiting_for_ok = 1; // Overwrite waiting_for_ok - necessary?
+    // Verify command was transmitted correctly
+    if(Serial.readBytes(ack_buffer,3) == 3){ // If we recieve all three bytes
+      if(ack_buffer[0] == command && memcmp(ack_buffer+1,&number,sizeof(number)) == 0) //  check if they match with message
+        return 0; //waiting_for_ok = 0;
+    }
   }
-  return waiting_for_ok;
+  return 1; //return waiting_for_ok;
 }
 
 void loop() {
@@ -201,7 +200,7 @@ void loop() {
         }
       } else { // Attempt deposit                                      ## DEPOSIT
         // Zero credits in machine - done now to avoid race-conditions of people buying when saving credits
-        Serial.write("ZZZZZ"); // Make sure the machine is zeroed five times
+        Serial.write("ZZZZZ"); // Make sure the machine is zeroed, do it five times to be sure
         if(addr == 0xFFFF){ // New card!
           // Attempt to find free spot
           //Serial.println("Unknown card - search for free spot");
