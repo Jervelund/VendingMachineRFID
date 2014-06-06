@@ -45,7 +45,7 @@ void setup() {
 
   lastCardScan = 0;
 
-  Serial.begin(19200); // Initialize serial communications with master vending Arduino
+  Serial.begin(57600); // Initialize serial communications with master vending Arduino
   Serial.setTimeout(200);
 
   SPI.begin(); // Init SPI bus
