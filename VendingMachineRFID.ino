@@ -81,7 +81,9 @@ uint16_t rfid_recieve(unsigned char command){
     while(Serial.available()){Serial.read();delay(5);}
     // Request and read data from other party
     Serial.write(command);
-    while(Serial.read() != 'C'){}; // Wait till other side transmits a C (is this the best solution?)
+    while(!Serial.available()); // Wait till other side transmits a C
+    if(Serial.read() != 'C')
+      return;
     number = rfid_raw_read();
     if(recieve_error == 0){ // Recieved correctly, return value
       return number;
