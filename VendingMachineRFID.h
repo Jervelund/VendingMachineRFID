@@ -8,8 +8,8 @@ typedef uint32_t card_uid_t;
 typedef uint16_t card_credits_t;
 
 typedef struct {
-    card_uid_t uid;
-    card_credits_t credits;
+  card_uid_t uid;
+  card_credits_t credits;
 } card_t;
 
 #endif
