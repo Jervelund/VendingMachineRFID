@@ -85,7 +85,7 @@ uint16_t rfid_recieve(unsigned char command) {
     // Request and read data from other party
     Serial.write(command);
     while (!Serial.available()); // Wait till other side transmits a C
-    if (Serial.read() != 'C')
+    if (Serial.read() != command)
       return;
     number = rfid_raw_read();
     if (recieve_error == 0) { // Received correctly, return value
@@ -191,6 +191,7 @@ void loop() {
             // Could not update machine credits - attempt to save credits to card again!
             card.credits = current_credits;
             updateAndVerify(addr, card);
+            Serial.write('F'); // finish communication
             BEEP(4);
           }// else {BEEP(1);}
         } else {
@@ -239,7 +240,7 @@ void loop() {
       // Attempt to add credits to card
       if (updateAndVerify(addr, card)) {
         // OK Beep
-        //BEEP(1);
+        Serial.write('F'); // finish communication
       } else {
         // Reset credits on vending machine
         rfid_transmit('S', credits_in_machine);
