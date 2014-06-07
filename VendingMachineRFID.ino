@@ -84,9 +84,16 @@ uint16_t rfid_recieve(unsigned char command) {
     }
     // Request and read data from other party
     Serial.write(command);
-    while (!Serial.available()); // Wait till other side transmits a C
-    if (Serial.read() != command)
-      return;
+    uint32_t now = millis();
+    while (!Serial.available() && (millis() - now < 1000)); // Wait till we recieve something or timeout
+    if (!Serial.available()){ // check if we recieved, or timed out
+      recieve_error = 1; // Nothing revieced - abort
+      return 0;
+    }
+    if (Serial.read() != command){
+      recieve_error = 1; // ACK not revieced - abort
+      return 0;
+    }
     number = rfid_raw_read();
     if (recieve_error == 0) { // Received correctly, return value
       return number;
