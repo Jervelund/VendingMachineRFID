@@ -196,7 +196,7 @@ void loop() {
         } else {
           // ERR Beep + display "ERR  EEPROM BAD" ?
           //Serial.println("ERR  EEPROM BAD");
-          Serial.write('B');
+          Serial.write('E');
           BEEP(4);
           // Halt PICC
           mfrc522.PICC_HaltA();
@@ -245,7 +245,7 @@ void loop() {
         rfid_transmit('S', credits_in_machine);
         // ERR Beep + display "ERR  EEPROM BAD" ?
         //Serial.println("ERR  EEPROM BAD");
-        Serial.write('B');
+        Serial.write('E');
         BEEP(4);
         // TODO: Move card + mark sector as bad.
         // Attempt to move card?
