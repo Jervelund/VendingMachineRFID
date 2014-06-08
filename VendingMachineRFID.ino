@@ -198,9 +198,9 @@ void loop() {
             // Could not update machine credits - attempt to save credits to card again!
             card.credits = current_credits;
             updateAndVerify(addr, card);
-            Serial.write('F'); // finish communication
             BEEP(4);
           }// else {BEEP(1);}
+          Serial.write('F'); // finish communication
         } else {
           // ERR Beep + display "ERR  EEPROM BAD" ?
           //Serial.println("ERR  EEPROM BAD");
