@@ -140,7 +140,7 @@ void loop() {
   if (!mfrc522.PICC_ReadCardSerial()) return;
   // Now a card is selected. The UID and SAK is in mfrc522.uid.
 
-  // Dump UID
+  // Debounce
   if (millis() - lastCardScan > timeBetweenScans) {
     lastCardScan = millis();
     // Some user feedback
