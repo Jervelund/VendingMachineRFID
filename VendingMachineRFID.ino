@@ -11,7 +11,7 @@
 #include "EEPROMAnything.h"
 #include "VendingMachineRFID.h"
 
-#define EEPROM_SIZE 1024
+#define EEPROM_SIZE (E2END + 1)
 
 //#include <SoftwareSerial.h>
 //SoftwareSerial Serial2(2, 3); // RX, TX
